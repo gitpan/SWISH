@@ -17,3 +17,9 @@ Revision history for Perl extension SWISH.
           $result->indexheaders method.  The headers are now
           stored as a hash with a key INDEX that points to
           a hash of headers by index file name.
+
+0.08 Sat Nov  1 22:56:38 UTC 2003
+
+        - Depreciated this module -- see README
+
+

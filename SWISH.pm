@@ -3,7 +3,7 @@ use strict;
 
 use vars (qw/$VERSION $errstr/);
 
-$VERSION = 0.07;
+$VERSION = 0.08;
 
 
 sub connect {
@@ -227,6 +227,11 @@ SWISH - Perl interface to the SWISH-E search engine.
 NOTE: This is alpha code and is not to be used in a production environment and the interface
 is expected to change while swish 2.2 is being developed.  Testing and feedback
 on using this module is B<gratefully appreciated>.
+
+B<NOTE:> This module is now depreciated.  Use the SWISH::API module instead.
+SWISH::API is bundled with Swish-e version 2.4.0, but will soon be available
+from the CPAN.  SWISH::API is an xs interface to the Swish-e library.
+
 
 This module provides a standard interface to the SWISH-E search engine.
 With this interface your program can use SWISH-E in the standard forking/exec
