@@ -3,7 +3,7 @@ use strict;
 
 use vars (qw/$VERSION $errstr/);
 
-$VERSION = 0.03;
+$VERSION = 0.04;
 
 
 sub connect {

@@ -4,4 +4,4 @@ Makefile.PL
 SWISH.pm
 test.pl
 INSTALL
-README
+
