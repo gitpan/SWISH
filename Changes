@@ -1,0 +1,6 @@
+Revision history for Perl extension SWISH.
+
+0.01  Tue Sep 12 12:04:53 2000
+	- original version; created by h2xs 1.20 with options
+		-X -n SWISH
+
