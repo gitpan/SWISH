@@ -3,12 +3,13 @@ use strict;
 
 use vars (qw/$VERSION $errstr/);
 
-$VERSION = 0.04;
+$VERSION = 0.07;
 
 
 sub connect {
     my $class = shift;
     my $driver = shift;
+
 
     unless ( $driver ) {
         $errstr = "Must supply Access Method";
@@ -24,8 +25,6 @@ sub connect {
 
     $driver = "SWISH::$driver";
 
-    
-
     my $drh;
 
     eval { $drh = $driver->new( @_ ); };
@@ -36,24 +35,41 @@ sub connect {
     return;
 }
 
+sub get_header {
+    my ($self, $name, $index) = @_;
+
+    # Return the entire hash
+    die "SWISH headers not defined\n" unless ref $self->{_indexheaders};
+    return $self->{_indexheaders} unless $name;
+
+    # Return the default headers
+    unless ( $index ) {
+        return unless exists $self->{_indexheaders}{lc $name};
+        return wantarray
+               ? @{$self->{_indexheaders}{lc $name}}
+               : $self->{_indexheaders}{lc $name}->[0];
+    }
+
+
+    # Return for a specific index file
+
+    die "Invalid index file name '$index' passed to get_header()\n"
+        unless exists $self->{_indexheaders}{INDEX}{$index};
+
+    return unless exists $self->{_indexheaders}{INDEX}{$index}{lc $name};
+    return wantarray
+           ? @{$self->{_indexheaders}{INDEX}{$index}{lc $name}}
+           : $self->{_indexheaders}{INDEX}{$index}{lc $name}->[0];
+
+
+}
+
+
+
 package SWISH::Results;
 use strict;
 use vars ( '$AUTOLOAD' );
 
-{
-    my %available = (
-        score       => undef,
-        file        => undef,
-        title       => undef,
-        size        => undef,
-        position    => undef,
-        total_hits  => undef,
-       #date        => undef,
-        properties  => undef,
-    );
-    sub _readable{ exists $available{$_[1]} };
-    #sub _writable{ $available{$_[1]} };
-}
 
 
 sub new {
@@ -62,49 +78,50 @@ sub new {
     return bless \%attr, $class;
 }
 
+# Some default methods
+sub disconnect {}
+sub close {}
+
 sub as_string {
     my $self = shift;
     my $delimiter = shift || ' ';
 
     my $blank = $delimiter =~ /^\s+$/;
 
-    my @properties = @{$self->{properties}} if $self->{properties};
+    my @properties = qw/swishrank swishdocpath swishtitle swishdocsize/;
+
+    push @properties, @{$self->{_settings}{properties}} if $self->{_settings}{properties};
 
     return join $delimiter, map { $blank && /\s/ ? qq["$_"] : $_ }
-                            map( { $self->{$_} || '???' } qw/score file title size/),
-                            @properties,
-                            "($self->{position}/$self->{total_hits})" ;
+                            map( { $self->{$_} || '???' } @properties ),
+                            "($self->{swishreccount}/$self->{total_hits})" ;
 }
+
 
 sub DESTROY {
 }
 
+sub field_names {
+    my $self = shift;
+    return grep { defined $self->{$_} } grep { !/^_/ } keys %$self;
+}
+    
+
+
 sub AUTOLOAD {
     my $self = shift;
-    no strict "refs";
 
-    # only access methods at this point
-
-    if ( $AUTOLOAD =~ /.*::(\w+)/ && $self->_readable( $1 ) ) {
+    if ( $AUTOLOAD =~ /.*::(\w+)/ ) {
         my $attribute = $1;
-        *{$AUTOLOAD} = sub {
-            return unless $_[0]->{$attribute};
 
-            return wantarray && ref( $_[0]->{$attribute} ) eq 'ARRAY'
-                   ? @{$_[0]->{$attribute}}
-                   : $_[0]->{$attribute};
-        };
-
-        return $self->{$attribute} || undef;
+        return defined $self->{$attribute} ? $self->{$attribute} : undef;
     }
 
-    # catch error?
 }
 
 
 1;
 __END__
-# Below is stub documentation for your module. You better edit it!
 
 =head1 NAME
 
@@ -136,6 +153,12 @@ SWISH - Perl interface to the SWISH-E search engine.
         maxhits  => 200,
         timeout  => 20,
         -e       => undef,      # add just a switch
+
+        version  => 2.2,
+        output_format => {
+            FIELDS = \@fields,
+            FORMAT = \%format,
+        },
     );
 
     $sh = SWISH->connect('Library', %parameters );
@@ -176,7 +199,15 @@ SWISH - Perl interface to the SWISH-E search engine.
     $r = $sh->reindex;
 
 
-    $header_array_ref = $sh->indexheaders;
+    $wordchars = $sh->get_header( 'WordCharacters' );
+    $run_time  = $sh->get_header( 'run time');
+
+    # swish-e version >= 2.2
+    $wordchars = $sh->get_header( 'WordCharacters', $index_1 );
+
+    $header_hash_ref  = $sh->get_header;
+    $wordchars = $header_hash_ref->{wordchars}->[0];
+    
 
 
     # returns words as swish sees them for indexing
@@ -193,7 +224,8 @@ SWISH - Perl interface to the SWISH-E search engine.
 
 =head1 DESCRIPTION
 
-NOTE: This is alpha code and is not to be used in a production environment.  Testing and feedback
+NOTE: This is alpha code and is not to be used in a production environment and the interface
+is expected to change while swish 2.2 is being developed.  Testing and feedback
 on using this module is B<gratefully appreciated>.
 
 This module provides a standard interface to the SWISH-E search engine.
@@ -203,6 +235,13 @@ server with only a small change.
 
 The idea is that you can change the way your program accesses a SWISH-E index without having
 to change your code.  Much, that is.
+
+The module has been used (I didn't say "tested" did I?) on SWISH 1.2, SWISH 1.3, and SWISH 2.04 and later.
+If you are using anything below 2.0 please try out the current version.  Indexing is much faster than with
+the old versions of SWISH.
+
+There are other programs called "swish".  Here we are only talking about SWISH-E, but sometimes will
+use "SWISH", "swish", "swish-e", and sometimes "the program".  This is just being lazy while typing.
 
 =head1 METHODS
 
@@ -217,15 +256,22 @@ overriding the defaults.
 C<$sh = SWISH-E<gt>connect( $access_method, \%params );>
 
 The connect method uses the C<$access_method> to initiate a connection with SWISH-E.
-What that means depends on the access method.
+What exactly that means depends on the access method.
 The return value is an object used to access methods below, or undefined if failed.
 Errors may be retrieved with the package variable $SWISH::errstr.
 
 The SWISH module will load the driver for the type of access specified in the access method, if
 available, by loading the C<SWISH::$access_method module>.
 
+The Fork access method will attempt to run
+swish when connecting to determine the version number.
+B<Please> set the version number when calling C<connect> -- otherwise you will be forking an extra
+process for every call to C<connect> you make.  (So, for example, don't call C<connect> under mod_perl
+for every request.)
+
 Parameters are described below in B<PARAMETERS>, but must include the path to the
-swish binary program if using the File access_method and index file(s).  (index files?)
+swish binary program (and perhaps the swish-e version) when using the Fork access method,
+and the index files when using the Library (or soon?) the Server access methods.
 
 =item B<query>
 
@@ -235,7 +281,8 @@ The query method executes a query and returns the number of hits found.  C<$hits
 if there is an error.  The last error may be retrieved with C<$sh-E<gt>error>.
 
 query can be passed a single scalar as the search string, a hash, or a reference to a hash.
-Parameters passed override the defaults specified in the connect method.
+Parameters passed override the defaults specified in the connect method (except index file names cannot be
+passed to C<query> with Library or Server access methods).
 
     Examples:
         $hits = $sh->query( 'foo or bar' );
@@ -243,8 +290,6 @@ Parameters passed override the defaults specified in the connect method.
         $hits = $sh->query( query => 'foo or bar' );
         $hits = $sh->query( %parameters );
         $hits = $sh->query( \%parameters );
-
-It is recommended to use a callback function to receive the search results.  See C<headers> below.
         
 
 
@@ -258,17 +303,54 @@ is recommended.
         @results = $sh->raw_query('foo');
         
 
-=item B<indexheaders>
+=item B<get_header>
 
-The indexheaders method accesses the headers from the last C<query> call.  Since SWISH
-may return more than one set of headers (e.g. when searching multiple indexes), this method
-returns a reference to an array of hashes.
+Returns the value of the supplied header name or C<undef> if the header is not set.
 
-    Example:
-        foreach my $header_set ( @{$sh->indexheaders} ) {
-            print "\nHeaders:\n";
-            print "$_:$header_set->{$_}\n" for sort keys %$header_set;
-        }
+As of version 2.2 additional headers are returned with each query.  Some headers are related to the
+the index file(s) being searched (e.g. WordCharacters), and some are not (e.g. Number of hits).
+
+For example, the number of hits are not related to any index, rather to the results of the entire
+query:
+
+    $hits = $sh->get_header('Number of Hits');
+
+On the otherhand, WordCharacters is related to a specific index file:
+
+    # swish-e version >= 2.2 only
+    $wchr1 = $sh->get_header('wordcharacters', $index1 );
+    $wchr2 = $sh->get_header('wordcharacters', $index2 );
+
+As a convenience, all headers may be retrieved without specifying the index file.  This is
+useful when only searching with one index file, or when you know all the settings are the same
+for all index files that you are searching.
+
+So, when searching one index file, these are the same:
+
+    $wchr = $sh->get_header('wordcharacters', $index1 );
+    $wchr = $sh->get_header('wordcharacters');
+
+Internally, the headers are stored as arrays.  So, if you have two index files as above,
+calling in list context will retrieve all values.
+
+    ($wchr1, $wchr2) = $sh->get_header('wordcharacters');
+
+The headers are stored internally as a hash of arrays.  The arrays allows storage of multiple headers
+of the same name.  You may retrieve this hash by calling get_header without any parameters:
+
+    use Data::Dumper;
+    my $headers = $sh->get_header;
+    print Dumper $headers;
+
+
+Under the "Fork" access method the headers will be available after the C<query> call,
+otherwise the headers are available at any point after the C<connect> call (except for headers that
+change on each query (e.g. Number of Hits);
+
+Most application do not need such fine access to the headers returned by swish.  But, for example,
+to correctly highlight terms you would need to know the wordcharacters setting used while indexing.
+
+   my $wordchars = $sh->get_header( 'wordcharacters', $result->{swishdbfile} );
 
 
 =item B<abort_query>
@@ -281,8 +363,7 @@ the current request.  You could also probably just die() and get the same result
 ** To Be Implemented **
 
 The index method creates a swish index file.  You may pass C<index> either
-a path to a SWISH-E configuration file, or reference to a hash with the index parameters
-stored in name =E<gt> value pairs.
+a path to a SWISH-E configuration file, or reference to a hash with the index parameters.
 
 The parameters in the hash will be written to a temporary file
 before indexing in with the Fork method.  If passing a reference to a hash, you may include a key B<tempfile>
@@ -308,7 +389,7 @@ when the index contains stemmed words.
 
 =item B<swish_words>
 
-** To Be Implemented? **
+** To Be Implemented **
 
 swish_words takes a scalar or a reference to a scalar and tokenizes the words as swish would
 do during indexing. The return value is a reference to an array where each element is a token.
@@ -374,6 +455,7 @@ is the same as
     -m      => 100,
 
 And to add just a switch without a parameter:
+
     -e      => undef,
 
 Keep in mind that not all switches may work with all access methods.  The swish
@@ -418,7 +500,9 @@ You must pass an array reference if using more than one property.
     Examples:
         $sh = query( query => 'foo', properties => 'title' );
         $sh = query( query => 'foo', properties => [qw/title subject/] );
-       
+
+
+See also B<output_format> for another way to access properties.
 
 =item B<maxhits>
 
@@ -465,29 +549,151 @@ by a query.
         $parameters{ results } = sub { print $_[1]->file, "\n" };
 
 Two paramaters are passed: the current search object (created by C<connect>) and
-an object blessed into the SWISH::Results class.
+an object blessed into the SWISH::Results class.  There are methods for a formatted string, for each
+result field, and for accessing properties.
 
 
-    Example:
+    Examples:
 
         sub display_results {
             my ($sh, $hit) = @_;
 
-            # SWISH::Results attributes
-            my @show = qw/score file title size position total_hits/;
+            # Display as a formatted string (in version <= 2.0 format)
+            $hit->as_string;
+
+            # Get the list of field names
+            # Only returns defined fields
             
-            my %results = map { ($_, $hit->$_) } @show;
-            my @properties = @{$hit->{properties}} if $hit->{properties};
-            print join( ':', @results{ @show }, @properties ), "\n";
+            my @fields = $hit->field_names;
+            print "Field '$_' = '", $hit->$_, "'\n" for sort @fields;
         }
 
-The callback routines (C<results> and C<headers>) are called while inside an eval block.
-If you die within your handlers the program will NOT exit, but any message you pass to die()
-will be available in $sh->errstr.  In general, do as little as possible with your callback
-routines.
+As of SWISH-E 2.2 all data is stored in the index as properties.  For backward compatibility, SWISH-E returns the standard
+fields called C<swishrank>, C<swishdocpath>, C<swishtitle>, and C<swishdocsize>.  Other fields may be available, so use the
+B<field_names> method to get a complete list of fields.  Use the field name as the method name to retrieve the data.
+That is,
+
+    $title = $hit->swishtitle
+
+will return the title of the document.  Here's a list of the field names -- more may be added as time goes on.
+
+Standard fields available before version 2.2:
+
+    swishrank     - score (rank) returned by swish
+    swishdocpath  - filename/URL of the document indexed
+    swishtitle    - doc title (HTML only)
+    swishdocsize  - doc size
+
+
+Standar fields available before version 2.2:
+
+    swishrank
+    swishdocpath
+    swishtitle
+    swishlastmodified - last modified date
+    swishdescription  - document summary
+    swishstartpos     - offset within the document
+    swishdocsize      
+    swishdbfile       - index file where the result was found
+
+Additional fields that are available in all versions:
+
+    total_hits        - total hits found for the query (not just maxhits)
+    swishreccount     - result number (sequence)
+
+
+Property values are returned by the same method:
+
+    $property_name_one = $hit->prop1
+
+When C<prop1> is the property name passed in the
+C<connect> or C<query> method.  Properites can be added to the defaults listed above by using
+the C<properties> parameter.  Otherwise, property values listed in C<output_format> (see below) will be available
+(along with only the other fields listed in C<output_format>).
+
+Field names are case sensitive -- you must ask for the same property (including case) as you specified when making the
+query. See SWISH-E documentation for more information.
+
+B<Exception Handling>
+
+The callback routines (C<results> and C<headers>)
+are called while inside an eval block (the eval block is used to for the timeout feature).
+If you die within your C<results> and C<headers> handlers the program will NOT exit,
+but any message you pass to die() will be available in $sh->errstr.
+In general, do as little as possible with your callback routines.
 
 The SWISH::Results class is currently within the SWISH module.  This may change.        
-    
+
+=item B<output_format>
+
+This feature requires SWISH-E 2.2 or above.
+
+This can be used to specify what fields are returned by swish (and their format).  You must pass a
+hash reference that contains two keys, C<FIELDS> (an array reference) and C<FORMAT> (a hash reference).
+
+    $hits = $sh->query( {
+        query => 'metaname=(foo or bar)',
+        output_format => {
+            FIELDS  => [qw/
+                swishrank
+                swishdocpath
+                swishtitle
+                swishlastmodified
+                property_one
+            ]/,
+            FORMAT => {
+                swishlastmodified => '%d',
+            },
+        }, );
+            
+The above tells swish to return only the fields specified in the FIELDS array, plus to apply the
+C<%d> format specification to the last modified date.
+The fields listed above are available are available in your C<results> callback subroutine:
+
+   sub display_results {
+        my ($sh, $hit) = @_;
+
+        my $prop = $hit->property_one;
+        my $unix_time = $hit->swishlastmodified;
+        ...
+
+   }
+   
+See the SWISH-E documentation for a description of the available format specifications.
+
+=item B<-x> Format specification
+
+This feature requires SWISH-E 2.2 or above.
+
+When the C<-x> switch is used it is passed B<directly> to swish-e.  This provides direct access
+to the swish-e output format feature, but requires you to parse the results, and the query will
+return an error C<Failed to find results> since the module will have not parsed any results.
+
+This method is useful if you want more control over the output, or want to tweak out a tiny bit more
+speed.
+
+When using C<-x> your B<results> callback function will receive two parameters, the swish object and
+the raw line (with newlines removed).
+
+Your B<format> you specify needs should end with a new line, or results may not be what you expect.  For example, the
+Fork access method reads results from swish one line at a time.  If you fail to place a newline code
+in your format then all results will be returned as a single line.
+
+For example, you can do this:
+
+    $options{'-x'} = 'Rank: <swishrank>, File: <swishdocpath>\n';
+
+Important: Note the use of single quotes to prevent \n from being converted to a new line.    
+
+Then in your callbac routine:
+
+   sub display_results {
+        my ($sh, $chomped_line ) = @_;
+
+        print $chomped_line,"\n";
+   }
+
+
 
 =item B<headers>
 
@@ -497,12 +703,16 @@ by a query.
     Example:
         $parameters{ headers } = \&headers;
 
-Your subroutine is called with three parameters: the current object, and the header and value.
+Your callback subroutine is called with four parameters: the current object, the header and the value,
+and the current index file that applies, if any.
 
     sub headers {
-        my ( $sh, $header, $value ) = @_;
+        my ( $sh, $header, $value, $cur_index ) = @_;
         print "$header: $value\n";
     }
+
+The C<$cur_index> will be the name of the index file the header is related to, if any, otherwise it
+will be undefined.
 
 In general, it will be better to call the C<headers> method.
 
